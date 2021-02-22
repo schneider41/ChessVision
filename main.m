@@ -16,8 +16,26 @@ disp("Ram Shirazi - 204272058")
 isPlot = true; % bolean for plots
 url = "http://192.168.1.16:8020/videoView";
 cam = ipcam(url);
-% cam = webcam(1);
 
+% preview(cam)
+% button = questdlg('Take image?','Creating dataset');
+% closePreview(cam)
+% if strcmp(button, 'Yes')
+%     I = cam.snapshot;
+%     I = rgb2gray(I);
+%     figure
+%     I = imcrop(I);
+% %     I = I - mean(I(:));
+%     close
+%     points = detectSURFFeatures(I);
+%     [features,validPoints] = extractFeatures(I, points);
+%     figure
+%     imshow(I)
+%     hold on
+%     plot(validPoints,'showOrientation',true);
+%     disp(length(validPoints))
+%     disp("")
+% end
 %% Step 1: Calibration
 waitfor(helpdlg({'Welcome to ChessVision'; 'Please setup the board and place white pawn on 1A square.'},'Welcome'))
 while true
@@ -26,7 +44,7 @@ while true
     closePreview(cam)
     while true
         I = cam.snapshot;
-        tform = calibrateBoard(I, false);
+        [tform, BB] = calibrateBoard(I, false);
         if ~isempty(tform)
             break
         end
@@ -42,6 +60,14 @@ while true
         break
     end
 end
+
+%%
+I = cam.snapshot;
+transImage = imwarp(I,tform);
+figure
+imshow(insertShape(transImage,'Rectangle',BB,'Linewidth',4))
+
+%% Step 2: Identify Pieces
 
 %% Step 2: Run game
 reset = true;
@@ -154,7 +180,7 @@ end
 %% Functions
 
 % main functions
-function tform = calibrateBoard(image, manual)
+function [tform, BB] = calibrateBoard(image, manual)
 tform = [];
 rot90 = false;
 rot180 = false;
@@ -210,20 +236,31 @@ if (boardMeans(1,8) > boardMeans(8,1) && ~manual) || (manual && rot180)
     tform = fitgeotrans(detectedPoints,gridPoints,'projective');
 end
 
+transImage = imwarp(image,tform);
+[centers, radii] = imfindcircles(transImage,[10 100]);
+[r,maxIdx] = max(radii);
+[x,y] = deal(centers(maxIdx,1) - r, centers(maxIdx,2) - 4*r);
+dx = 2*r;
+dy = 5*r;
+BB = [x,y,dx,dy];
+
 if ~manual
     transImage = imwarp(image,tform,'OutputView',imref2d(Consts.BOARDSIZE * Consts.SQUARESIZE));
     gridPoints = generateCheckerboardPoints(Consts.BOARDSIZE, Consts.SQUARESIZE) + Consts.SQUARESIZE;
     figure(1)
     sgtitle('Board Calibration')
-    subplot(1,2,1)
+    subplot(1,3,1)
     imshow(image)
     hold on
     plot(detectedPoints(:,1),detectedPoints(:,2),'ro')
-    subplot(1,2,2)
+    subplot(1,3,2)
     imshow(transImage)
     hold on
     plot(gridPoints(:,1),gridPoints(:,2),'ro')
-    pause(1.5)
+    subplot(1,3,3)
+    imshow(imwarp(image,tform))
+    pause(0.25)
+    viscircles(centers(maxIdx,:), radii(maxIdx),'EdgeColor','b');
 end
 end
 
